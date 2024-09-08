@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -12,16 +13,17 @@ import (
 )
 
 type FileProcessor struct {
-	dir string
+	sourceDir      string
+	destinationDir string
 }
 
-func NewFileProcessor(dir string) *FileProcessor {
-	return &FileProcessor{dir: dir}
+func NewFileProcessor(sourceDir, destinationDir string) *FileProcessor {
+	return &FileProcessor{sourceDir: sourceDir, destinationDir: destinationDir}
 }
 
 func (fp *FileProcessor) ProcessDirectory() error {
 	startTime := time.Now()
-	err := filepath.Walk(fp.dir, fp.processFile)
+	err := filepath.Walk(fp.sourceDir, fp.processFile)
 	if err != nil {
 		return err
 	}
@@ -80,12 +82,12 @@ func (fp *FileProcessor) processImageFile(path string) error {
 	x, err := exif.Decode(f)
 	if err != nil {
 		log.Printf("Error decoding EXIF data: %s\n", path)
-		return err
+		return nil
 	}
 
 	printFileInfo(f)
 	printCameraModel(x)
-	return renameFileWithDate(x, path)
+	return fp.renameFileWithDate(x, path)
 }
 
 func printFileInfo(f *os.File) {
@@ -101,7 +103,7 @@ func printCameraModel(x *exif.Exif) {
 	}
 }
 
-func renameFileWithDate(x *exif.Exif, path string) error {
+func (fp *FileProcessor) renameFileWithDate(x *exif.Exif, path string) error {
 	date, err := x.Get(exif.DateTime)
 	if err != nil {
 		log.Printf("Error getting date: %s\n", path)
@@ -110,13 +112,20 @@ func renameFileWithDate(x *exif.Exif, path string) error {
 
 	dateStr := date.String()
 	newName := sanitizeFilename(dateStr) + filepath.Ext(path)
-	newPath := filepath.Join(filepath.Dir(path), newName)
+	newPath := filepath.Join(fp.destinationDir, newName)
 
-	if err := os.Rename(path, newPath); err != nil {
-		log.Printf("Error renaming file: %s\n", err)
+	err = copyFile(path, newPath)
+	if err != nil {
+		log.Printf("Error copying file: %s\n", err)
 		return err
 	}
-	log.Printf("File renamed to: %s\n", newName)
+	err = os.Remove(path)
+	if err != nil {
+		log.Printf("Error deleting file: %s\n", err)
+		return err
+	}
+
+	log.Printf("File moved and renamed to: %s\n", newPath)
 	return nil
 }
 
@@ -134,13 +143,41 @@ func sanitizeFilename(dateStr string) string {
 		sanitized[17:19]) // second
 }
 
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, in)
+	if err != nil {
+		return err
+	}
+
+	return out.Sync()
+}
+
 func main() {
-	if len(os.Args) < 2 {
-		log.Println("Usage: go run main.go <directory>")
+	if len(os.Args) < 3 {
+		log.Println("Usage: go run main.go <source_directory> <destination_directory>")
 		os.Exit(1)
 	}
 
-	processor := NewFileProcessor(os.Args[1])
+	sourceDir := os.Args[1]
+	destinationDir := os.Args[2]
+
+	if err := os.MkdirAll(destinationDir, os.ModePerm); err != nil {
+		log.Fatalf("Error creating destination directory: %v\n", err)
+	}
+
+	processor := NewFileProcessor(sourceDir, destinationDir)
 	if err := processor.ProcessDirectory(); err != nil {
 		log.Fatal(err)
 	}
