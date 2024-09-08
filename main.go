@@ -11,60 +11,45 @@ import (
 	"github.com/rwcarlsen/goexif/exif"
 )
 
-// FileProcessor handles the processing of image files.
 type FileProcessor struct {
 	dir string
 }
 
-// NewFileProcessor creates a new FileProcessor.
 func NewFileProcessor(dir string) *FileProcessor {
 	return &FileProcessor{dir: dir}
 }
 
-// ProcessDirectory processes the directory and its files.
 func (fp *FileProcessor) ProcessDirectory() error {
 	startTime := time.Now()
-
 	err := filepath.Walk(fp.dir, fp.processFile)
 	if err != nil {
 		return err
 	}
-
-	totalTime := time.Since(startTime)
-	fmt.Printf("Total processing time: %v\n", totalTime)
-
+	log.Printf("Total processing time: %v\n", time.Since(startTime))
 	return nil
 }
 
-// processFile is called for each file or directory during the walk.
 func (fp *FileProcessor) processFile(path string, info os.FileInfo, err error) error {
 	if err != nil {
 		return handleFileError(path, err)
 	}
-
 	if shouldSkip(info) {
 		return nil
 	}
-
 	if !isSupportedFile(path) {
-		log.Printf("Skipping non-JPG/ARW file: %s\n", path)
+		log.Printf("Skipping unsupported file: %s\n", path)
 		return nil
 	}
 
 	startTime := time.Now()
-
 	err = fp.processImageFile(path)
 	if err != nil {
 		return err
 	}
-
-	fileProcessingTime := time.Since(startTime) // Calculate duration for the file
-	fmt.Printf("Processing time for file %s: %v\n", path, fileProcessingTime)
-
+	log.Printf("Processing time for file %s: %v\n", path, time.Since(startTime))
 	return nil
 }
 
-// handleFileError handles errors encountered while processing files.
 func handleFileError(path string, err error) error {
 	if os.IsPermission(err) {
 		log.Printf("Skipping restricted file: %s (Permission denied)\n", path)
@@ -73,18 +58,15 @@ func handleFileError(path string, err error) error {
 	return err
 }
 
-// shouldSkip determines if a file or directory should be skipped.
 func shouldSkip(info os.FileInfo) bool {
-	return info.IsDir() && strings.HasPrefix(info.Name(), ".") || strings.HasPrefix(info.Name(), ".")
+	return info.IsDir() && strings.HasPrefix(info.Name(), ".")
 }
 
-// isSupportedFile checks if the file has a supported extension.
 func isSupportedFile(path string) bool {
-	ext := filepath.Ext(path)
-	return ext == ".JPG" || ext == ".ARW"
+	ext := strings.ToLower(filepath.Ext(path))
+	return ext == ".jpg" || ext == ".arw"
 }
 
-// processImageFile processes an image file and prints its metadata.
 func (fp *FileProcessor) processImageFile(path string) error {
 	log.Printf("Processing file: %s\n", path)
 
@@ -95,55 +77,70 @@ func (fp *FileProcessor) processImageFile(path string) error {
 	}
 	defer f.Close()
 
-	if filepath.Ext(path) == ".JPG" || filepath.Ext(path) == ".ARW" {
-		return processJPGFile(f)
+	x, err := exif.Decode(f)
+	if err != nil {
+		log.Printf("Error decoding EXIF data: %s\n", path)
+		return err
 	}
 
-	log.Printf("Raw file detected, handling not implemented: %s\n", path)
+	printFileInfo(f)
+	printCameraModel(x)
+	return renameFileWithDate(x, path)
+}
+
+func printFileInfo(f *os.File) {
+	fi, err := f.Stat()
+	if err == nil {
+		log.Printf("The file is %.2f MB long", float64(fi.Size())/(1024*1024))
+	}
+}
+
+func printCameraModel(x *exif.Exif) {
+	if model, err := x.Get(exif.Model); err == nil {
+		log.Printf("Camera model: %s", model)
+	}
+}
+
+func renameFileWithDate(x *exif.Exif, path string) error {
+	date, err := x.Get(exif.DateTime)
+	if err != nil {
+		log.Printf("Error getting date: %s\n", path)
+		return nil
+	}
+
+	dateStr := date.String()
+	newName := sanitizeFilename(dateStr) + filepath.Ext(path)
+	newPath := filepath.Join(filepath.Dir(path), newName)
+
+	if err := os.Rename(path, newPath); err != nil {
+		log.Printf("Error renaming file: %s\n", err)
+		return err
+	}
+	log.Printf("File renamed to: %s\n", newName)
 	return nil
 }
 
-// processJPGFile processes a JPG file and prints its EXIF data.
-func processJPGFile(f *os.File) error {
-	x, err := exif.Decode(f)
-	if err != nil {
-		log.Printf("Error decoding EXIF data: %s\n", f.Name())
-		return nil
-	}
+func sanitizeFilename(dateStr string) string {
+	// Remove any quotes and replace colons and spaces with underscores
+	sanitized := strings.NewReplacer(`"`, "", ":", "_", " ", "_").Replace(dateStr)
 
-	fi, err := f.Stat()
-	if err != nil {
-		log.Printf("Error getting file size: %s\n", f.Name())
-		return nil
-	}
-
-	fmt.Printf("The file is %.2f MB long", float64(fi.Size())/(1024*1024))
-
-	if camModel, err := x.Get(exif.Model); err == nil {
-		fmt.Printf("Camera model: %s\n", camModel.String())
-	} else {
-		log.Printf("Error getting camera model: %s\n", f.Name())
-	}
-
-	if date, err := x.Get(exif.DateTime); err == nil {
-		fmt.Printf("Date: %s\n", date.String())
-	} else {
-		log.Printf("Error getting date: %s\n", f.Name())
-	}
-
-	fmt.Println()
-	return nil
+	// Extract components and format as yyyy_mm_dd_hh_mm_ss
+	return fmt.Sprintf("%s_%s_%s_%s_%s_%s",
+		sanitized[:4],    // year
+		sanitized[5:7],   // month
+		sanitized[8:10],  // day
+		sanitized[11:13], // hour
+		sanitized[14:16], // minute
+		sanitized[17:19]) // second
 }
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("Usage: go run main.go <directory>")
+		log.Println("Usage: go run main.go <directory>")
 		os.Exit(1)
 	}
 
-	dir := os.Args[1]
-	processor := NewFileProcessor(dir)
-
+	processor := NewFileProcessor(os.Args[1])
 	if err := processor.ProcessDirectory(); err != nil {
 		log.Fatal(err)
 	}
