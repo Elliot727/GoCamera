@@ -15,10 +15,11 @@ import (
 type FileProcessor struct {
 	sourceDir      string
 	destinationDir string
+	concurrency    int
 }
 
-func NewFileProcessor(sourceDir, destinationDir string) *FileProcessor {
-	return &FileProcessor{sourceDir: sourceDir, destinationDir: destinationDir}
+func NewFileProcessor(sourceDir, destinationDir string, concurrency int) *FileProcessor {
+	return &FileProcessor{sourceDir: sourceDir, destinationDir: destinationDir, concurrency: concurrency}
 }
 
 func (fp *FileProcessor) ProcessDirectory() error {
@@ -43,12 +44,10 @@ func (fp *FileProcessor) processFile(path string, info os.FileInfo, err error) e
 		return nil
 	}
 
-	startTime := time.Now()
 	err = fp.processImageFile(path)
 	if err != nil {
 		return err
 	}
-	log.Printf("Processing time for file %s: %v\n", path, time.Since(startTime))
 	return nil
 }
 
@@ -70,8 +69,6 @@ func isSupportedFile(path string) bool {
 }
 
 func (fp *FileProcessor) processImageFile(path string) error {
-	log.Printf("Processing file: %s\n", path)
-
 	f, err := os.Open(path)
 	if err != nil {
 		log.Printf("Error opening file: %s\n", path)
@@ -85,25 +82,15 @@ func (fp *FileProcessor) processImageFile(path string) error {
 		return nil
 	}
 
-	printFileInfo(f)
-	printCameraModel(x)
-	return fp.renameFileWithDate(x, path)
-}
-
-func printFileInfo(f *os.File) {
-	fi, err := f.Stat()
-	if err == nil {
-		log.Printf("The file is %.2f MB long", float64(fi.Size())/(1024*1024))
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		log.Printf("Error seeking file: %s\n", path)
+		return nil
 	}
+
+	return fp.renameAndCopyFileWithDate(x, f, path)
 }
 
-func printCameraModel(x *exif.Exif) {
-	if model, err := x.Get(exif.Model); err == nil {
-		log.Printf("Camera model: %s", model)
-	}
-}
-
-func (fp *FileProcessor) renameFileWithDate(x *exif.Exif, path string) error {
+func (fp *FileProcessor) renameAndCopyFileWithDate(x *exif.Exif, file *os.File, path string) error {
 	date, err := x.Get(exif.DateTime)
 	if err != nil {
 		log.Printf("Error getting date: %s\n", path)
@@ -114,7 +101,7 @@ func (fp *FileProcessor) renameFileWithDate(x *exif.Exif, path string) error {
 	newName := sanitizeFilename(dateStr) + filepath.Ext(path)
 	newPath := filepath.Join(fp.destinationDir, newName)
 
-	err = copyFile(path, newPath)
+	err = copyFileWithBuffer(file, newPath)
 	if err != nil {
 		log.Printf("Error copying file: %s\n", err)
 		return err
@@ -125,12 +112,38 @@ func (fp *FileProcessor) renameFileWithDate(x *exif.Exif, path string) error {
 		return err
 	}
 
-	log.Printf("File moved and renamed to: %s\n", newPath)
+	return nil
+}
+
+func copyFileWithBuffer(src *os.File, dst string) error {
+	startTime := time.Now()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	// Define a reusable buffer of 32KB
+	buffer := make([]byte, 32*1024)
+
+	// Use io.CopyBuffer to copy from src to dst
+	_, err = io.CopyBuffer(out, src, buffer)
+	if err != nil {
+		return err
+	}
+
+	// Ensure everything is written to disk
+	err = out.Sync()
+	if err != nil {
+		return err
+	}
+
+	log.Printf("File copied in %v\n", time.Since(startTime))
 	return nil
 }
 
 func sanitizeFilename(dateStr string) string {
-	// Remove any quotes and replace colons and spaces with underscores
 	sanitized := strings.NewReplacer(`"`, "", ":", "_", " ", "_").Replace(dateStr)
 
 	// Extract components and format as yyyy_mm_dd_hh_mm_ss
@@ -141,27 +154,6 @@ func sanitizeFilename(dateStr string) string {
 		sanitized[11:13], // hour
 		sanitized[14:16], // minute
 		sanitized[17:19]) // second
-}
-
-func copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-
-	out, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-
-	_, err = io.Copy(out, in)
-	if err != nil {
-		return err
-	}
-
-	return out.Sync()
 }
 
 func main() {
@@ -177,7 +169,7 @@ func main() {
 		log.Fatalf("Error creating destination directory: %v\n", err)
 	}
 
-	processor := NewFileProcessor(sourceDir, destinationDir)
+	processor := NewFileProcessor(sourceDir, destinationDir, 4)
 	if err := processor.ProcessDirectory(); err != nil {
 		log.Fatal(err)
 	}
