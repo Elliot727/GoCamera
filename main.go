@@ -6,7 +6,9 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/rwcarlsen/goexif/exif"
@@ -15,48 +17,49 @@ import (
 type FileProcessor struct {
 	sourceDir      string
 	destinationDir string
-	concurrency    int
 }
 
-func NewFileProcessor(sourceDir, destinationDir string, concurrency int) *FileProcessor {
-	return &FileProcessor{sourceDir: sourceDir, destinationDir: destinationDir, concurrency: concurrency}
+func NewFileProcessor(sourceDir, destinationDir string) *FileProcessor {
+	return &FileProcessor{sourceDir: sourceDir, destinationDir: destinationDir}
 }
 
 func (fp *FileProcessor) ProcessDirectory() error {
 	startTime := time.Now()
-	err := filepath.Walk(fp.sourceDir, fp.processFile)
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, runtime.NumCPU()) // Semaphore for limiting concurrency
+
+	err := filepath.Walk(fp.sourceDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if shouldSkip(info) {
+			return nil
+		}
+		if !isSupportedFile(path) {
+			log.Printf("Skipping unsupported file: %s\n", path)
+			return nil
+		}
+
+		wg.Add(1)
+		sem <- struct{}{} // Acquire semaphore
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }() // Release semaphore
+			if err := fp.processImageFile(path); err != nil {
+				log.Printf("Error processing file %s: %v\n", path, err)
+			}
+		}()
+
+		return nil
+	})
 	if err != nil {
 		return err
 	}
+
+	wg.Wait()
+
 	log.Printf("Total processing time: %v\n", time.Since(startTime))
 	return nil
-}
-
-func (fp *FileProcessor) processFile(path string, info os.FileInfo, err error) error {
-	if err != nil {
-		return handleFileError(path, err)
-	}
-	if shouldSkip(info) {
-		return nil
-	}
-	if !isSupportedFile(path) {
-		log.Printf("Skipping unsupported file: %s\n", path)
-		return nil
-	}
-
-	err = fp.processImageFile(path)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func handleFileError(path string, err error) error {
-	if os.IsPermission(err) {
-		log.Printf("Skipping restricted file: %s (Permission denied)\n", path)
-		return nil
-	}
-	return err
 }
 
 func shouldSkip(info os.FileInfo) bool {
@@ -169,7 +172,7 @@ func main() {
 		log.Fatalf("Error creating destination directory: %v\n", err)
 	}
 
-	processor := NewFileProcessor(sourceDir, destinationDir, 4)
+	processor := NewFileProcessor(sourceDir, destinationDir)
 	if err := processor.ProcessDirectory(); err != nil {
 		log.Fatal(err)
 	}
