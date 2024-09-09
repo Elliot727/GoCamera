@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -26,7 +25,7 @@ func NewFileProcessor(sourceDir, destinationDir string) *FileProcessor {
 func (fp *FileProcessor) ProcessDirectory() error {
 	startTime := time.Now()
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, runtime.NumCPU()) // Semaphore for limiting concurrency
+	sem := make(chan struct{}, 12) // Semaphore for limiting concurrency
 
 	err := filepath.Walk(fp.sourceDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -101,6 +100,12 @@ func (fp *FileProcessor) renameAndCopyFileWithDate(x *exif.Exif, file *os.File, 
 	}
 
 	dateStr := date.String()
+
+	if err := os.MkdirAll(fp.destinationDir, os.ModePerm); err != nil {
+		log.Printf("Error creating directory: %s\n", fp.destinationDir)
+		return err
+	}
+
 	newName := sanitizeFilename(dateStr) + filepath.Ext(path)
 	newPath := filepath.Join(fp.destinationDir, newName)
 
@@ -127,16 +132,13 @@ func copyFileWithBuffer(src *os.File, dst string) error {
 	}
 	defer out.Close()
 
-	// Define a reusable buffer of 32KB
 	buffer := make([]byte, 32*1024)
 
-	// Use io.CopyBuffer to copy from src to dst
 	_, err = io.CopyBuffer(out, src, buffer)
 	if err != nil {
 		return err
 	}
 
-	// Ensure everything is written to disk
 	err = out.Sync()
 	if err != nil {
 		return err
@@ -157,23 +159,4 @@ func sanitizeFilename(dateStr string) string {
 		sanitized[11:13], // hour
 		sanitized[14:16], // minute
 		sanitized[17:19]) // second
-}
-
-func main() {
-	if len(os.Args) < 3 {
-		log.Println("Usage: go run main.go <source_directory> <destination_directory>")
-		os.Exit(1)
-	}
-
-	sourceDir := os.Args[1]
-	destinationDir := os.Args[2]
-
-	if err := os.MkdirAll(destinationDir, os.ModePerm); err != nil {
-		log.Fatalf("Error creating destination directory: %v\n", err)
-	}
-
-	processor := NewFileProcessor(sourceDir, destinationDir)
-	if err := processor.ProcessDirectory(); err != nil {
-		log.Fatal(err)
-	}
 }
