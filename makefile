@@ -3,4 +3,4 @@
 .PHONY: run
 
 run:
-	go run main/*.go $(SOURCE) $(DEST)
+	go run cmd/*.go $(SOURCE) $(DEST)

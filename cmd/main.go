@@ -1,6 +1,8 @@
 package main
 
 import (
+	"GoCamera/internal/organiser"
+	"GoCamera/internal/transfer"
 	"fmt"
 	"log"
 	"os"
@@ -20,8 +22,8 @@ func main() {
 		log.Fatalf("Error creating destination directory: %v\n", err)
 	}
 
-	processor := NewFileProcessor(sourceDir, destinationDir)
-	organiser := NewFileOrganiser(destinationDir)
+	processor := transfer.NewFileProcessor(sourceDir, destinationDir)
+	organiser := organiser.NewFileOrganiser(destinationDir)
 
 	var wg sync.WaitGroup
 	var transferDone = make(chan bool)

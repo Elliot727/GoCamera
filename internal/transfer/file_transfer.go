@@ -1,7 +1,7 @@
-package main
+package transfer
 
 import (
-	"fmt"
+	"GoCamera/pkg/utils"
 	"io"
 	"log"
 	"os"
@@ -34,7 +34,7 @@ func (fp *FileProcessor) ProcessDirectory() error {
 		if shouldSkip(info) {
 			return nil
 		}
-		if !isSupportedFile(path) {
+		if !utils.IsSupportedFile(path) {
 			log.Printf("Skipping unsupported file: %s\n", path)
 			return nil
 		}
@@ -63,11 +63,6 @@ func (fp *FileProcessor) ProcessDirectory() error {
 
 func shouldSkip(info os.FileInfo) bool {
 	return info.IsDir() && strings.HasPrefix(info.Name(), ".")
-}
-
-func isSupportedFile(path string) bool {
-	ext := strings.ToLower(filepath.Ext(path))
-	return ext == ".jpg" || ext == ".arw"
 }
 
 func (fp *FileProcessor) processImageFile(path string) error {
@@ -106,7 +101,7 @@ func (fp *FileProcessor) renameAndCopyFileWithDate(x *exif.Exif, file *os.File, 
 		return err
 	}
 
-	newName := sanitizeFilename(dateStr) + filepath.Ext(path)
+	newName := utils.SanitizeFilename(dateStr) + filepath.Ext(path)
 	newPath := filepath.Join(fp.destinationDir, newName)
 
 	err = copyFileWithBuffer(file, newPath)
@@ -146,17 +141,4 @@ func copyFileWithBuffer(src *os.File, dst string) error {
 
 	log.Printf("File copied in %v\n", time.Since(startTime))
 	return nil
-}
-
-func sanitizeFilename(dateStr string) string {
-	sanitized := strings.NewReplacer(`"`, "", ":", "_", " ", "_").Replace(dateStr)
-
-	// Extract components and format as yyyy_mm_dd_hh_mm_ss
-	return fmt.Sprintf("%s_%s_%s_%s_%s_%s",
-		sanitized[:4],    // year
-		sanitized[5:7],   // month
-		sanitized[8:10],  // day
-		sanitized[11:13], // hour
-		sanitized[14:16], // minute
-		sanitized[17:19]) // second
 }

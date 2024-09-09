@@ -1,6 +1,7 @@
-package main
+package organiser
 
 import (
+	"GoCamera/pkg/utils"
 	"fmt"
 	"io/fs"
 	"log"
@@ -38,7 +39,7 @@ func (fo *FileOrganiser) ProcessFiles() error {
 			return nil
 		}
 
-		if !isSupportedFile(path) {
+		if !utils.IsSupportedFile(path) {
 			log.Printf("Skipping unsupported file: %s\n", path)
 			return nil
 		}
@@ -51,7 +52,7 @@ func (fo *FileOrganiser) ProcessFiles() error {
 			defer func() { <-sem }()
 
 			startExtractTime := time.Now()
-			date, err := extractDateFromFilename(p)
+			date, err := utils.ExtractDateFromFilename(p)
 			if err != nil {
 				fmt.Println("Error:", err)
 				return
@@ -89,25 +90,6 @@ func (fo *FileOrganiser) ProcessFiles() error {
 	fmt.Printf("Total processing time: %v\n", duration)
 
 	return nil
-}
-
-func extractDateFromFilename(filename string) (string, error) {
-	base := filepath.Base(filename)
-
-	dateStr := strings.TrimSuffix(base, filepath.Ext(base))
-	if len(dateStr) != 19 {
-		return "", fmt.Errorf("filename format is incorrect: %s", dateStr)
-	}
-
-	layout := "2006_01_02_15_04_05"
-
-	date, err := time.Parse(layout, dateStr)
-	if err != nil {
-		return "", fmt.Errorf("error parsing date: %w", err)
-	}
-
-	formattedDate := date.Format("2006/01/02")
-	return formattedDate, nil
 }
 
 func createDirectories(baseDir, year, month, day string) error {
