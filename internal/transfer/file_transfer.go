@@ -3,6 +3,7 @@ package transfer
 import (
 	"GoCamera/pkg/utils"
 	"io"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
@@ -27,15 +28,15 @@ func (fp *FileProcessor) ProcessDirectory() error {
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 12) // Semaphore for limiting concurrency
 
-	err := filepath.Walk(fp.sourceDir, func(path string, info os.FileInfo, err error) error {
+	err := filepath.WalkDir(fp.sourceDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if shouldSkip(info) {
+		if shouldSkip(d) {
 			return nil
 		}
-		if !utils.IsSupportedFile(path) {
-			log.Printf("Skipping unsupported file: %s\n", path)
+		if d.IsDir() || !utils.IsSupportedFile(path) {
+			log.Printf("Skipping unsupported or directory: %s\n", path)
 			return nil
 		}
 
@@ -61,8 +62,9 @@ func (fp *FileProcessor) ProcessDirectory() error {
 	return nil
 }
 
-func shouldSkip(info os.FileInfo) bool {
-	return info.IsDir() && strings.HasPrefix(info.Name(), ".")
+func shouldSkip(d fs.DirEntry) bool {
+	name := d.Name()
+	return d.IsDir() && (strings.HasPrefix(name, ".") || name == ".Trashes")
 }
 
 func (fp *FileProcessor) processImageFile(path string) error {

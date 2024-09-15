@@ -28,13 +28,23 @@ func (fo *FileOrganiser) ProcessFiles() error {
 	fileCount := 0
 	dirCount := 0
 
-	err := filepath.Walk(fo.sourceDir, func(path string, info fs.FileInfo, err error) error {
+	// Using WalkDir instead of Walk
+	err := filepath.WalkDir(fo.sourceDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
+			if os.IsPermission(err) {
+				log.Printf("Skipping file due to permissions: %s\n", path)
+				return nil
+			}
 			return err
 		}
-		fmt.Printf("Processing path: %s\n", path)
 
-		if info.IsDir() {
+		fmt.Println("Processing file:", d.Name())
+		if d.Name() == ".Trashes" || d.Name()[0] == '.' {
+			log.Printf("Skipping hidden directory or file: %s\n", path)
+			return nil
+		}
+
+		if d.IsDir() {
 			dirCount++
 			return nil
 		}
@@ -47,7 +57,7 @@ func (fo *FileOrganiser) ProcessFiles() error {
 		wg.Add(1)
 		sem <- struct{}{}
 
-		go func(p string, file fs.FileInfo) {
+		go func(p string, entry fs.DirEntry) {
 			defer wg.Done()
 			defer func() { <-sem }()
 
@@ -72,7 +82,7 @@ func (fo *FileOrganiser) ProcessFiles() error {
 			fileCount++
 			fmt.Printf("Date extraction took: %v\n", extractDuration)
 			fmt.Printf("File move took: %v\n", moveDuration)
-		}(path, info)
+		}(path, d)
 
 		return nil
 	})
@@ -105,19 +115,26 @@ func createDirectories(baseDir, year, month, day string) error {
 }
 
 func moveFileToDateDir(filePath, formattedDate, baseDir string) error {
+	// Define the "photos" subdirectory
+	photosDir := filepath.Join(baseDir, "photos")
+
+	// Split the formatted date into year, month, day
 	parts := strings.Split(formattedDate, "/")
 	if len(parts) != 3 {
 		return fmt.Errorf("date format is incorrect: %s", formattedDate)
 	}
 	year, month, day := parts[0], parts[1], parts[2]
 
-	if err := createDirectories(baseDir, year, month, day); err != nil {
+	// Create the directories under /photos
+	if err := createDirectories(photosDir, year, month, day); err != nil {
 		return fmt.Errorf("error creating dir: %w", err)
 	}
 
+	// Move the file to /photos/yyyy/mm/dd/
 	baseName := filepath.Base(filePath)
-	newPath := filepath.Join(baseDir, year, month, day, baseName)
+	newPath := filepath.Join(photosDir, year, month, day, baseName)
 
+	// Perform the file move
 	if err := os.Rename(filePath, newPath); err != nil {
 		return fmt.Errorf("error moving file: %w", err)
 	}

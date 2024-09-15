@@ -3,6 +3,7 @@ package main
 import (
 	"GoCamera/internal/organiser"
 	"GoCamera/internal/transfer"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -10,46 +11,86 @@ import (
 )
 
 func main() {
-	if len(os.Args) < 3 {
-		log.Println("Usage: go run main.go <source_directory> <destination_directory>")
-		os.Exit(1)
+	// Define flags
+	runServer := flag.Bool("server", false, "Run the server")
+	runTransfer := flag.Bool("transfer", false, "Run the file transfer")
+	runOrganise := flag.Bool("organise", false, "Run the file organiser")
+	sourceDir := flag.String("source", "", "Source directory for transfer mode")
+	destDir := flag.String("dest", "", "Destination directory for transfer, organise, and server modes")
+	port := flag.String("port", "8080", "Port for server mode")
+
+	flag.Parse()
+
+	// Validate that at least one mode is selected
+	if !*runServer && !*runTransfer && !*runOrganise {
+		log.Fatal("Please specify at least one mode to run: --server, --transfer, or --organise")
 	}
 
-	sourceDir := os.Args[1]
-	destinationDir := os.Args[2]
-
-	if err := os.MkdirAll(destinationDir, os.ModePerm); err != nil {
-		log.Fatalf("Error creating destination directory: %v\n", err)
+	// Validate required directories
+	if *runTransfer && (*sourceDir == "" || *destDir == "") {
+		log.Fatal("Source and destination directories are required for transfer mode")
 	}
-
-	processor := transfer.NewFileProcessor(sourceDir, destinationDir)
-	organiser := organiser.NewFileOrganiser(destinationDir)
+	if (*runOrganise || *runServer) && *destDir == "" {
+		log.Fatal("Destination directory is required for organise and server modes")
+	}
 
 	var wg sync.WaitGroup
-	var transferDone = make(chan bool)
 
-	// Start file transfer in a goroutine
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		if err := processor.ProcessDirectory(); err != nil {
-			fmt.Println("Error in file transfer:", err)
-			close(transferDone)
-			return
-		}
-		transferDone <- true
-	}()
+	// Run server if selected
+	if *runServer {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			runServerComponent(*destDir, *port)
+		}()
+	}
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		<-transferDone
-		if err := organiser.ProcessFiles(); err != nil {
-			fmt.Println("Error in file organization:", err)
-			return
-		}
-	}()
+	// Run transfer if selected
+	if *runTransfer {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			runTransferComponent(*sourceDir, *destDir)
+		}()
+	}
 
+	// Run organise if selected
+	if *runOrganise {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			runOrganiseComponent(*destDir)
+		}()
+	}
+
+	// Wait for all selected components to complete
 	wg.Wait()
-	fmt.Println("Processing complete.")
+	fmt.Println("All selected operations completed.")
+}
+
+func runServerComponent(dir, port string) {
+
+}
+
+func runTransferComponent(src, dest string) {
+	if err := os.MkdirAll(dest, os.ModePerm); err != nil {
+		log.Printf("Error creating destination directory: %v\n", err)
+		return
+	}
+
+	processor := transfer.NewFileProcessor(src, dest)
+	if err := processor.ProcessDirectory(); err != nil {
+		log.Printf("Error in file transfer: %v\n", err)
+		return
+	}
+	fmt.Println("Transfer complete.")
+}
+
+func runOrganiseComponent(dir string) {
+	organiser := organiser.NewFileOrganiser(dir)
+	if err := organiser.ProcessFiles(); err != nil {
+		log.Printf("Error in file organization: %v\n", err)
+		return
+	}
+	fmt.Println("Organisation complete.")
 }
