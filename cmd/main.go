@@ -7,8 +7,15 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"sync"
 )
+
+func sendNotification(title, message string) error {
+	script := fmt.Sprintf(`display notification "%s" with title "%s"`, message, title)
+	_, err := exec.Command("osascript", "-e", script).Output()
+	return err
+}
 
 func main() {
 	// Define flags
@@ -63,8 +70,12 @@ func main() {
 		}()
 	}
 
-	// Wait for all selected components to complete
 	wg.Wait()
+	err := sendNotification("Process Complete", "All selected operations have been completed successfully.")
+	if err != nil {
+		fmt.Printf("Error sending notification: %v\n", err)
+	}
+
 	fmt.Println("All selected operations completed.")
 }
 

@@ -1,53 +1,79 @@
 # File Organiser
 
-A Go-based tool for organizing files based on the date extracted from their filenames. This project processes files in a specified directory, categorizes them by date, and moves them into a structured folder hierarchy.
+A Go-based tool for organizing and transferring files. This project includes functionality for transferring files from a source directory to a destination directory and organizing them based on extracted date information from filenames.
 
 ## Features
 
-- **File Processing**: Scans a source directory for files.
-- **Date Extraction**: Extracts date information from filenames.
-- **File Organization**: Moves files into a directory structure based on the extracted date.
-- **Concurrent Processing**: Utilizes goroutines to speed up file processing.
+- **File Transfer**: Moves files from a source directory to a destination directory.
+- **File Organization**: Scans a directory, extracts date information from filenames, and organizes files into a structured folder hierarchy.
+- **Concurrent Processing**: Utilizes goroutines and semaphore patterns to handle multiple files efficiently.
+- **Server Mode**: (To be implemented) Placeholder for running a server if required.
 
 ## Prerequisites
 
 - Go 1.18 or higher
-- Access to the source directory with files to process
-- Destination directory (optional, used for copying files if applicable)
+- Access to the source and destination directories
 
 ## Installation
 
 1. **Clone the repository:**
 
-    ```sh
-    git clone https://github.com/yourusername/file-organiser.git
-    cd file-organiser
-    ```
+   ```sh
+   git clone https://github.com/elliot727/GoCamera.git
+   cd GoCamera
+   ```
 
 2. **Ensure Go is installed and set up on your system.**
 
 ## Usage
 
-To run the application:
+To run the application, use the following command:
 
 ```sh
-go run main/*.go <source_directory> <destination_directory>
+cd cmd
+go run main/*.go [options]
 ```
 
-- `<source_directory>`: The path to the directory containing the files to be processed.
-- `<destination_directory>`: The path to the directory where files will be organized (if applicable).
+### Options
 
-### Example
+- `--server`: Run the server mode (currently not implemented).
+- `--transfer`: Run the file transfer mode.
+- `--organise`: Run the file organisation mode.
+- `--source`: Source directory for file transfer mode.
+- `--dest`: Destination directory for file transfer, organisation, and server modes.
+- `--port`: Port for server mode (default is `8080`).
 
-```sh
-go run main/*.go "/Volumes/Untitled/DCIM/100MSDCF" "/Volumes/My Passport/Photos"
-```
+### Examples
+
+1. **Run file transfer:**
+
+   ```sh
+   go run main/*.go --transfer --source "/path/to/source" --dest "/path/to/destination"
+   ```
+
+2. **Run file organization:**
+
+   ```sh
+   go run main/*.go --organise --dest "/path/to/destination"
+   ```
+
+3. **Run server mode (if implemented):**
+
+   ```sh
+   go run main/*.go --server --dest "/path/to/destination" --port "8080"
+   ```
 
 ## Code Overview
 
 - **`main.go`**: Entry point of the application. Handles argument parsing and coordinates file processing and organization.
-- **`file_processor.go`**: Contains logic for copying files from the source directory to the destination.
-- **`file_organiser.go`**: Contains logic for organizing files into directories based on extracted dates from filenames.
+- **`internal/transfer/transfer.go`**: Contains logic for copying files from the source directory to the destination.
+- **`internal/organiser/organiser.go`**: Contains logic for organizing files into directories based on extracted dates from filenames.
+
+### Directory Structure
+
+- **`main.go`**: Entry point for the application.
+- **`internal/transfer/transfer.go`**: File transfer logic.
+- **`internal/organiser/organiser.go`**: File organization logic.
 
 ## Contributing
 
