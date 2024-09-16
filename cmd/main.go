@@ -1,9 +1,10 @@
 package main
 
 import (
+	"GoCamera/internal/api"
 	"GoCamera/internal/organiser"
 	"GoCamera/internal/transfer"
-	"flag"
+	"GoCamera/pkg/utils"
 	"fmt"
 	"log"
 	"os"
@@ -18,60 +19,52 @@ func sendNotification(title, message string) error {
 }
 
 func main() {
-	// Define flags
-	runServer := flag.Bool("server", false, "Run the server")
-	runTransfer := flag.Bool("transfer", false, "Run the file transfer")
-	runOrganise := flag.Bool("organise", false, "Run the file organiser")
-	sourceDir := flag.String("source", "", "Source directory for transfer mode")
-	destDir := flag.String("dest", "", "Destination directory for transfer, organise, and server modes")
-	port := flag.String("port", "8080", "Port for server mode")
-
-	flag.Parse()
-
-	// Validate that at least one mode is selected
-	if !*runServer && !*runTransfer && !*runOrganise {
-		log.Fatal("Please specify at least one mode to run: --server, --transfer, or --organise")
+	cfg, err := utils.LoadConfig()
+	if err != nil {
+		log.Fatalf("Error loading config: %v", err)
 	}
 
-	// Validate required directories
-	if *runTransfer && (*sourceDir == "" || *destDir == "") {
+	if !cfg.Server && !cfg.Transfer && !cfg.Organise {
+		log.Fatal("Please specify at least one mode to run: server, transfer, or organise")
+	}
+
+	if cfg.Transfer && (cfg.Source == "" || cfg.Dest == "") {
 		log.Fatal("Source and destination directories are required for transfer mode")
 	}
-	if (*runOrganise || *runServer) && *destDir == "" {
+	if (cfg.Organise || cfg.Server) && cfg.Dest == "" {
 		log.Fatal("Destination directory is required for organise and server modes")
 	}
 
 	var wg sync.WaitGroup
 
 	// Run server if selected
-	if *runServer {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			runServerComponent(*destDir, *port)
-		}()
+	if cfg.Server {
+		runServerComponent(cfg.Dest, cfg.Port)
+
 	}
 
 	// Run transfer if selected
-	if *runTransfer {
+	if cfg.Transfer {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			runTransferComponent(*sourceDir, *destDir)
+			runTransferComponent(cfg.Source, cfg.Dest)
 		}()
 	}
 
 	// Run organise if selected
-	if *runOrganise {
+	if cfg.Organise {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			runOrganiseComponent(*destDir)
+			runOrganiseComponent(cfg.Dest)
 		}()
 	}
 
 	wg.Wait()
-	err := sendNotification("Process Complete", "All selected operations have been completed successfully.")
+
+	// Notify completion
+	err = sendNotification("Process Complete", "All selected operations have been completed successfully.")
 	if err != nil {
 		fmt.Printf("Error sending notification: %v\n", err)
 	}
@@ -80,7 +73,11 @@ func main() {
 }
 
 func runServerComponent(dir, port string) {
+	server := api.NewServer(port)
 
+	if err := server.Start(); err != nil {
+		log.Fatalf("Error starting server: %v\n", err)
+	}
 }
 
 func runTransferComponent(src, dest string) {

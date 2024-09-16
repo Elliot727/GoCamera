@@ -28,7 +28,6 @@ func (fo *FileOrganiser) ProcessFiles() error {
 	fileCount := 0
 	dirCount := 0
 
-	// Using WalkDir instead of Walk
 	err := filepath.WalkDir(fo.sourceDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			if os.IsPermission(err) {
@@ -115,26 +114,21 @@ func createDirectories(baseDir, year, month, day string) error {
 }
 
 func moveFileToDateDir(filePath, formattedDate, baseDir string) error {
-	// Define the "photos" subdirectory
 	photosDir := filepath.Join(baseDir, "photos")
 
-	// Split the formatted date into year, month, day
 	parts := strings.Split(formattedDate, "/")
 	if len(parts) != 3 {
 		return fmt.Errorf("date format is incorrect: %s", formattedDate)
 	}
 	year, month, day := parts[0], parts[1], parts[2]
 
-	// Create the directories under /photos
 	if err := createDirectories(photosDir, year, month, day); err != nil {
 		return fmt.Errorf("error creating dir: %w", err)
 	}
 
-	// Move the file to /photos/yyyy/mm/dd/
 	baseName := filepath.Base(filePath)
 	newPath := filepath.Join(photosDir, year, month, day, baseName)
 
-	// Perform the file move
 	if err := os.Rename(filePath, newPath); err != nil {
 		return fmt.Errorf("error moving file: %w", err)
 	}

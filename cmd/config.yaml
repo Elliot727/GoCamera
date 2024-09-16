@@ -1,0 +1,6 @@
+server: true
+transfer: false
+organise: false
+source: "/path/to/source"
+dest: "/Users/elliotsilver/Documents/p5"
+port: "8080"
